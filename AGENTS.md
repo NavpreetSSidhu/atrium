@@ -15,6 +15,7 @@ apps/api/            Go modular monolith (one module, binaries under cmd/)
   internal/db/       InTenant + Scope: the only way to run tenant-scoped SQL
   internal/identity/ login, sessions, access tokens, Authn middleware
   internal/tenancy/  spaces (tenants) and memberships
+  internal/scheduling/ services, availability, slot engine (pure, slots.go), bookings
   internal/httpx/    shared JSON request/response helpers
   internal/<module>/ identity, tenancy, catalog, scheduling, rtc, commerce, ... (PRD §3)
   migrations/        goose SQL, numbered, append-only

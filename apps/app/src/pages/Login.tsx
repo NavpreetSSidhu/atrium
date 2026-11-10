@@ -1,10 +1,14 @@
-import { useNavigate } from '@tanstack/react-router'
+import { getRouteApi, useRouter } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { Button, Field, Input, Shell } from '../components/ui'
 import { ApiError, auth } from '../lib/api'
-import { toE164 } from '../lib/format'
+import { safeRedirect, toE164 } from '../lib/format'
 
 type Channel = 'sms' | 'email'
+
+// Where to go after an email magic link signs in (the link opens a new page, so it can't carry state).
+export const AFTER_LOGIN = 'atrium.after-login'
+const route = getRouteApi('/login')
 
 function errorText(e: unknown, channel: Channel) {
   if (!(e instanceof ApiError)) return 'Something went wrong. Check your connection and try again.'
@@ -15,7 +19,8 @@ function errorText(e: unknown, channel: Channel) {
 }
 
 export function LoginPage() {
-  const navigate = useNavigate()
+  const router = useRouter()
+  const { redirect } = route.useSearch()
   const [channel, setChannel] = useState<Channel>('sms')
   const [dest, setDest] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
@@ -39,6 +44,11 @@ export function LoginPage() {
     e?.preventDefault()
     const to = channel === 'sms' ? toE164(dest) : dest.trim().toLowerCase()
     run(async () => {
+      if (channel === 'email') {
+        try {
+          localStorage.setItem(AFTER_LOGIN, safeRedirect(redirect))
+        } catch {}
+      }
       await auth.start(channel, to)
       setSentTo(to)
       setCode('')
@@ -48,7 +58,7 @@ export function LoginPage() {
     e.preventDefault()
     run(async () => {
       await auth.verify('sms', sentTo!, code)
-      await navigate({ to: '/' })
+      router.history.push(safeRedirect(redirect))
     })
   }
   const reset = () => {

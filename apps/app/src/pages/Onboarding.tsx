@@ -2,9 +2,8 @@ import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { Button, Field, Input, Shell } from '../components/ui'
-import { ApiError, createTenant, meQuery, tenantsQuery, setName as saveName, type Focus, type Tenant } from '../lib/api'
+import { ApiError, createTenant, meQuery, selectTenant, tenantsQuery, setName as saveName, type Focus, type Tenant } from '../lib/api'
 import { slugify } from '../lib/format'
-import { selectTenant } from '../lib/onboarding'
 
 const offers: { id: Focus; title: string; body: string }[] = [
   { id: 'courses', title: 'Courses & live classes', body: 'Recorded lessons, cohorts, webinars and events.' },

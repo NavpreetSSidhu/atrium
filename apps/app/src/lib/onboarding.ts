@@ -1,31 +1,18 @@
 import type { Tenant } from './api.ts'
 
-const TENANT_KEY = 'atrium.tenant'
+export type Progress = { services: number; hasHours: boolean }
+export type Step = { title: string; body: string; done?: boolean; to?: string }
 
-// Remembers the selected space per browser. Storage can be blocked, so failures are ignored.
-export function selectTenant(id: string) {
-  try {
-    localStorage.setItem(TENANT_KEY, id)
-  } catch {}
-}
-export function savedTenant() {
-  try {
-    return localStorage.getItem(TENANT_KEY)
-  } catch {
-    return null
-  }
-}
-
-type Step = { title: string; body: string; done?: boolean }
-
-// Getting-started walkthrough, tailored to what the space offers. Steps unlock as their modules ship (PRD §6).
-export function checklist(t: Tenant): Step[] {
+// Getting-started walkthrough, tailored to what the space offers. Steps link to their page once the
+// module exists; the rest say "Coming soon" (PRD §6).
+export function checklist(t: Tenant, p: Progress): Step[] {
   return [
     { title: 'Create your space', body: `${t.slug}.atrium.in is reserved for you.`, done: true },
     ...(t.focus.includes('appointments')
       ? [
-          { title: 'Add a service', body: 'Set the length, fee and whether it is video, in person or phone.' },
-          { title: 'Set your availability', body: 'Weekly hours, buffers between bookings and time off.' },
+          { title: 'Add a service', body: 'Set the length, fee and whether it is video, in person or phone.', done: p.services > 0, to: '/services' },
+          { title: 'Set your availability', body: 'Weekly hours, buffers between bookings and time off.', done: p.hasHours, to: '/availability' },
+          { title: 'Share your booking page', body: 'Send clients your link so they can book themselves.', to: `/book/${t.slug}` },
         ]
       : []),
     ...(t.focus.includes('courses')

@@ -43,6 +43,9 @@ Migrations are in `apps/api/migrations` (goose format). Run them as a role with 
 - [x] Auth: SMS OTP, email magic link, rotating refresh sessions, `Authn` → `db.Scope` middleware (ADR-6)
 - [x] Refresh token in httpOnly cookie, immediate revocation, cross-tab refresh lock
 - [x] Onboarding walkthrough: sign-in UI, name → offer → space → getting-started dashboard (`apps/app`)
+- [x] Scheduling (PRD M4): services, availability and days off, slot engine, buffer-aware no-double-booking, holds, cancel/reschedule with cutoff
+- [x] Scheduling UI: Services, Availability, Appointments, customer booking page `/book/{slug}`, member "My appointments"
+- [ ] Scheduling follow-ups: reminders (WhatsApp/SMS/email), Google/Outlook sync, intake forms, payment-gated confirmation, staff invites + per-provider services
 - [ ] Third-party (later): Google OAuth, MSG91 SMS, SES email; then 2FA, per-IP rate limit
 - [ ] River worker, OTel, sqlc, goose runner (`cmd/migrate`)
 - [x] Scaffold `apps/web` (Next.js 16) and `apps/app` (Vite 8 + Tailwind)
