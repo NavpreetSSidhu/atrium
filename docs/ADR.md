@@ -19,3 +19,10 @@ Payments split straight to each seller's linked account, so the platform never h
 - Tenant sites and the marketplace need SSR/ISR, custom domains and SEO, so they run on Next.js (host-based tenant resolution, Cloudflare for SaaS hostnames).
 - Dashboards and rooms are interactive and authenticated, so they run as a Vite SPA shipped as a PWA.
 - Both use one generated OpenAPI TypeScript client.
+
+## ADR-6 Sessions: stateless access JWT, rotating refresh token in Postgres
+- Access token: HS256 JWT (`sub` = user, `sid` = session), 15 minutes, verified without a DB hit. A revoked session keeps working until its access token expires; that 15-minute window is accepted.
+- Refresh token: 32 random bytes, stored only as a SHA-256 hash in `sessions`. Every refresh rotates it. A rotated-out token coming back means it leaked, so the session is revoked.
+- Login codes and session creation run only through `SECURITY DEFINER` functions (`app.start_login`, `app.finish_login`, `app.refresh_session`). `login_codes` has no grants for `app_user` at all, and a session can only be created by proving a code. The app stays on `app_user` and keeps forced RLS on every table.
+- The scope's `UserID` comes only from a verified JWT. `TenantID` is requested by the client (`X-Tenant-ID`) and enforced by RLS through `app.member_role()`.
+- *Why:* no extra session store, stolen refresh tokens are detectable, and auth can't become a way around RLS.

@@ -13,6 +13,7 @@ Atrium: a multi-tenant SaaS (courses, live classes, appointments, storefronts, m
 apps/api/            Go modular monolith (one module, binaries under cmd/)
   cmd/<binary>/      main packages only: wiring, no logic (api now; worker, realtime, migrate later)
   internal/db/       InTenant + Scope: the only way to run tenant-scoped SQL
+  internal/identity/ login, sessions, access tokens, Authn middleware
   internal/<module>/ identity, tenancy, catalog, scheduling, rtc, commerce, ... (PRD §3)
   migrations/        goose SQL, numbered, append-only
 apps/web/            Next.js: tenant sites, marketing, marketplace
@@ -37,8 +38,8 @@ Before you say "done": `go vet` and `go test` pass with `TEST_DATABASE_URL` set.
 
 ## Non-negotiable invariants
 1. **Tenant isolation is enforced by Postgres RLS, not app code.** Every tenant-scoped query runs inside `db.InTenant`. Never query tenant tables on the raw pool from a request path.
-2. `db.Scope` comes only from a verified session. Never build it from request bodies, headers or query params.
-3. Every new table: `tenant_id uuid not null`, `enable` + `force row level security`, policies, and tenant-composite FKs `(tenant_id, x_id)` (FK checks bypass RLS). `rls_test.go` fails on any public table without forced RLS. Add cross-tenant cases for every new table.
+2. `db.Scope.UserID` comes only from a verified access token (`identity.Authn`). `TenantID` may be client-selected (`X-Tenant-ID`) because RLS checks membership. Handlers read the scope with `db.ScopeFrom(ctx)`.
+3. Every new table: `tenant_id uuid not null`, `enable` + `force row level security`, policies, and tenant-composite FKs `(tenant_id, x_id)` (FK checks bypass RLS). `rls_test.go` fails on any public table without forced RLS. Add cross-tenant cases for every new table. Integration tests get a fresh migrated database from `dbtest.New(t, "<pkg>")`.
 4. Roles are read in the DB (`app.member_role()`), never trusted from the client.
 5. Invariants that matter (no double booking, money) are DB constraints, not app checks.
 6. Money: double-entry ledger is the source of truth; webhooks idempotent on provider event id; no stored balances.

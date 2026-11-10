@@ -24,8 +24,10 @@ Requires Go 1.26+, Node 22+, pnpm 10, Docker.
 docker compose up -d
 cd apps/api
 TEST_DATABASE_URL='postgres://postgres:dev@localhost:55432/atrium?sslmode=disable' go test ./...   # RLS gate
-DATABASE_URL='postgres://postgres:dev@localhost:55432/atrium?sslmode=disable' go run ./cmd/api     # GET :8080/healthz
+DATABASE_URL='postgres://postgres:dev@localhost:55432/atrium?sslmode=disable' \
+  AUTH_JWT_SECRET=$(openssl rand -hex 32) go run ./cmd/api                                        # GET :8080/healthz
 ```
+In dev, login codes and magic links are written to the API log instead of being sent.
 Migrations are in `apps/api/migrations` (goose format). Run them as a role with BYPASSRLS. The app connects as a login role granted `app_user`.
 
 ## Status: Phase 0 (foundations)
@@ -36,7 +38,8 @@ Migrations are in `apps/api/migrations` (goose format). Run them as a role with 
 - [x] RLS harness (`db.InTenant`) and cross-tenant/cross-role test suite
 - [x] Double-booking exclusion constraint and tenant-composite FKs
 - [ ] Specs still to write: RLS policy catalog, API outline (OpenAPI)
-- [ ] Auth (OTP, Google, magic link) and session to `db.Scope` middleware
+- [x] Auth: SMS OTP, email magic link, rotating refresh sessions, `Authn` → `db.Scope` middleware (ADR-6)
+- [ ] Auth follow-ups: Google OAuth, MSG91/SES senders, 2FA, per-IP rate limit, httpOnly refresh cookie
 - [ ] River worker, OTel, sqlc, goose runner (`cmd/migrate`)
 - [x] Scaffold `apps/web` (Next.js 16) and `apps/app` (Vite 8 + Tailwind)
 - [ ] Scaffold `packages/*`; generated API client; TanStack, shadcn/ui, PWA in `apps/app`

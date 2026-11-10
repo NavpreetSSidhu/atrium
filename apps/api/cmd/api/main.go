@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/NavpreetSSidhu/atrium/apps/api/internal/identity"
 )
 
 func main() {
@@ -24,7 +26,24 @@ func main() {
 	}
 	defer pool.Close()
 
+	secret := []byte(os.Getenv("AUTH_JWT_SECRET"))
+	if len(secret) < 32 {
+		slog.Error("AUTH_JWT_SECRET must be at least 32 bytes")
+		os.Exit(1)
+	}
+	// shortcut: only the dev log sender exists; production needs MSG91 (SMS) and SES (email) senders first.
+	if os.Getenv("APP_ENV") == "production" {
+		slog.Error("no SMS/email sender configured for production")
+		os.Exit(1)
+	}
+	appURL := os.Getenv("APP_URL")
+	if appURL == "" {
+		appURL = "http://localhost:5173"
+	}
+	auth := &identity.Service{Pool: pool, Sender: identity.LogSender{}, Secret: secret, AppURL: appURL}
+
 	mux := http.NewServeMux()
+	auth.Routes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := pool.Ping(r.Context()); err != nil {
 			http.Error(w, "db down", http.StatusServiceUnavailable)

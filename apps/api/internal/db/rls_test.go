@@ -3,34 +3,19 @@ package db
 import (
 	"context"
 	"errors"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/NavpreetSSidhu/atrium/apps/api/internal/db/dbtest"
 )
 
 // CI gate: cross-tenant and cross-role isolation. Needs TEST_DATABASE_URL (see docker-compose.yml).
 func TestRLS(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	pool := dbtest.New(t, "db")
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-
-	mig, err := os.ReadFile("../../migrations/00001_core.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	mustExec(t, pool, `drop schema if exists app cascade; drop schema public cascade; create schema public;`)
-	mustExec(t, pool, strings.Split(string(mig), "-- +goose Down")[0])
 
 	const (
 		tA, tB                  = "00000000-0000-0000-0000-00000000000a", "00000000-0000-0000-0000-00000000000b"
@@ -50,7 +35,8 @@ func TestRLS(t *testing.T) {
 	    ('`+tA+`','`+pA+`','`+carol+`','2026-12-01 10:00+05:30','2026-12-01 10:30+05:30','confirmed'),
 	    ('`+tB+`','`+pB+`','`+bob+`','2026-12-01 11:00+05:30','2026-12-01 11:30+05:30','confirmed');
 	  insert into notes (tenant_id, author_id, subject_user_id, visibility, body_enc) values
-	    ('`+tA+`','`+doc+`','`+carol+`','private','x'),('`+tA+`','`+doc+`','`+carol+`','shared','y');`)
+	    ('`+tA+`','`+doc+`','`+carol+`','private','x'),('`+tA+`','`+doc+`','`+carol+`','shared','y');
+	  insert into sessions (user_id, refresh_hash, expires_at) values ('`+doc+`','h', now() + interval '1 day');`)
 
 	count := func(s Scope, q string) (n int) {
 		t.Helper()
@@ -76,6 +62,8 @@ func TestRLS(t *testing.T) {
 		{"author sees both notes", Scope{tA, doc}, "select count(*) from notes", 2},
 		{"member can't list other members", Scope{tA, carol}, "select count(*) from memberships", 1},
 		{"no scope, no rows", Scope{"", ""}, "select count(*) from tenants", 0},
+		{"user sees own sessions", Scope{"", doc}, "select count(*) from sessions", 1},
+		{"owner can't see another user's sessions", Scope{tA, alice}, "select count(*) from sessions", 0},
 	}
 	for _, c := range cases {
 		if got := count(c.s, c.q); got != c.want {
@@ -84,7 +72,7 @@ func TestRLS(t *testing.T) {
 	}
 
 	// Member can't create a booking for someone else.
-	err = InTenant(ctx, pool, Scope{tA, dave}, func(tx pgx.Tx) error {
+	err := InTenant(ctx, pool, Scope{tA, dave}, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at)
 		  values ($1,$2,$3,'2026-12-02 10:00+05:30','2026-12-02 10:30+05:30')`, tA, pA, carol)
 		return err
@@ -111,6 +99,15 @@ func TestRLS(t *testing.T) {
 	})
 	if !isCode(err, "23P01") {
 		t.Errorf("overlapping booking: want exclusion violation, got %v", err)
+	}
+
+	// login_codes is reachable only through SECURITY DEFINER functions.
+	err = InTenant(ctx, pool, Scope{tA, alice}, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, "select 1 from login_codes")
+		return err
+	})
+	if !isCode(err, "42501") {
+		t.Errorf("login_codes direct read: want permission denied, got %v", err)
 	}
 
 	// Every public table must have forced RLS; new tables without it fail CI.

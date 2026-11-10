@@ -34,6 +34,14 @@ One global user account works across many tenants, as on Lockers. Roles are stor
 - Sign-in by phone OTP (MSG91), email magic link or Google OAuth. Spaces (tenants), invites and role matrix.
 - Sessions use a short-lived access JWT plus a rotating refresh token. Sessions can be listed and revoked.
 - 2FA is required for owners and providers who handle health data.
+- **Auth flow (API):**
+  - `POST /auth/start {channel: sms|email, dest}` sends a 6-digit SMS code or an email magic link (`APP_URL/auth/verify?email=&code=`). Both expire in 10 minutes. 5 per destination per hour, 5 wrong guesses kill a code. The response never reveals whether the account exists.
+  - `POST /auth/verify {channel, dest, code}` creates the user on first login and returns `{access_token, refresh_token, expires_in}`. Access JWT lives 15 minutes, the refresh token 30 days.
+  - `POST /auth/refresh {refresh_token}` rotates the refresh token. Reusing a rotated-out token revokes the whole session (theft detection).
+  - `POST /auth/logout`, `GET /auth/sessions`, `DELETE /auth/sessions/{id}`, `GET /me` need `Authorization: Bearer <access>`.
+  - Tenant context: an optional `X-Tenant-ID` header. RLS checks membership, so a forged header sees nothing.
+  - Phone numbers must be E.164. Emails are lowercased.
+  - Not yet: Google OAuth (needs a Google client), 2FA, per-IP rate limiting (Redis), refresh token in an httpOnly cookie for the web apps.
 
 **M2 Site builder / CMS (Next.js)**
 - Block-based page editor using **Puck**, an open-source React visual editor, so we don't build our own.

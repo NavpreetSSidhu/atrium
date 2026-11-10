@@ -9,10 +9,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Scope must come from a verified session token, never from client input.
+// Scope is the request identity RLS evaluates. UserID must come from a verified session token,
+// never from client input. TenantID may be client-selected: RLS checks membership via app.member_role().
 type Scope struct {
 	TenantID string
 	UserID   string
+}
+
+type scopeKey struct{}
+
+// WithScope stores the authenticated scope on the request context (set by identity.Authn).
+func WithScope(ctx context.Context, s Scope) context.Context {
+	return context.WithValue(ctx, scopeKey{}, s)
+}
+
+// ScopeFrom returns the scope set by WithScope.
+func ScopeFrom(ctx context.Context) (Scope, bool) {
+	s, ok := ctx.Value(scopeKey{}).(Scope)
+	return s, ok
 }
 
 // InTenant runs fn in a tx scoped to s. SET LOCAL is safe under PgBouncer transaction pooling.
