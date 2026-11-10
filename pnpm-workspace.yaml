@@ -4,3 +4,11 @@ packages:
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+# Single source of truth for versions shared across workspaces: use "catalog:" in package.json.
+catalog:
+  typescript: ^5  # shortcut: typescript-eslint (eslint-config-next) rejects TS 7; move to 7 once it supports it
+  react: ^19.3.1
+  react-dom: ^19.3.1
+  "@types/react": ^19.3.0
+  "@types/react-dom": ^19.3.0
+  "@types/node": ^22
