@@ -67,6 +67,14 @@ One global user account works across many tenants, as on Lockers. Roles are stor
 - Reschedule and cancel policies, with refund rules attached to each policy. Reminders 24h and 1h before, by WhatsApp, SMS and email.
 - Two-way Google and Outlook calendar sync: push to the external calendar, and import busy blocks through watch webhooks.
 - Intake forms per service, for example patient history or case details.
+- **Built so far (API + apps/app):**
+  - Services are `offerings` of type `service` with a `services` detail row: duration, buffer after, location, minimum notice, booking horizon, cancellation cutoff, price in paise.
+  - A staff member becomes a provider for themselves. Every provider offers every service for now (per-provider service lists come with staff invites).
+  - Availability: weekly rules in minutes from midnight in the provider's timezone, plus date overrides (an override replaces that day's hours; an override with no hours closes the day).
+  - Slots step by duration + buffer, must end inside working hours, and skip anything that overlaps a booking's `[starts_at, blocked_until)`. The server re-derives slots on booking, so only offered slots can be booked.
+  - Free services confirm immediately. Paid services are held for 10 minutes until the payments module confirms them; expired holds stop blocking the slot.
+  - Customers join a space from its booking page (`/book/{slug}`) and become `member`s. They can cancel or reschedule until the service's cutoff; staff and the provider can cancel anytime.
+  - Not yet: reminders, calendar sync, intake forms, payment-gated confirmation, anonymous (SEO) booking pages on apps/web.
 
 **M5 Real-time: meetings and live (self-hosted LiveKit, which is written in Go)**
 - **Meetings:** 1:1 and group sessions with up to about 50 interactive participants.

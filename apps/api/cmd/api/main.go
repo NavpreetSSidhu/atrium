@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NavpreetSSidhu/atrium/apps/api/internal/identity"
+	"github.com/NavpreetSSidhu/atrium/apps/api/internal/scheduling"
 	"github.com/NavpreetSSidhu/atrium/apps/api/internal/tenancy"
 )
 
@@ -49,6 +50,7 @@ func main() {
 	mux := http.NewServeMux()
 	auth.Routes(mux)
 	tenants.Routes(mux, auth.Authn)
+	(&scheduling.Scheduler{Pool: pool, Now: time.Now}).Routes(mux, auth.Authn)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := pool.Ping(r.Context()); err != nil {
 			http.Error(w, "db down", http.StatusServiceUnavailable)

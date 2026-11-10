@@ -26,3 +26,9 @@ Payments split straight to each seller's linked account, so the platform never h
 - Login codes and session creation run only through `SECURITY DEFINER` functions (`app.start_login`, `app.finish_login`, `app.refresh_session`). `login_codes` has no grants for `app_user` at all, and a session can only be created by proving a code. The app stays on `app_user` and keeps forced RLS on every table.
 - The scope's `UserID` comes only from a verified JWT. `TenantID` is requested by the client (`X-Tenant-ID`) and enforced by RLS through `app.member_role()`.
 - *Why:* no extra session store, stolen refresh tokens are detectable, and auth can't become a way around RLS.
+
+## ADR-7 Double booking blocked on [start, start + duration + buffer)
+- `bookings.blocked_until` (= `ends_at` + the service's buffer) is stored, because exclusion constraints need immutable expressions and `timestamptz + interval` isn't. The exclusion constraint covers `tstzrange(starts_at, blocked_until)`.
+- Expired holds are released (set to `cancelled`) by `app.release_expired_holds` inside the booking transaction, since the constraint can't reference `now()`. A River sweeper can replace this later.
+- Customers can't see other customers' bookings, so slot generation reads busy ranges through `app.busy()`. It returns times only, never who booked.
+- *Why:* the database stays the only judge of overlaps, including buffers and races, and slot lookup leaks no PII.

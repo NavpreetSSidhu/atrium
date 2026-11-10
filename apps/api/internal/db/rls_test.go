@@ -31,9 +31,12 @@ func TestRLS(t *testing.T) {
 	    ('`+tA+`','`+alice+`','owner'),('`+tA+`','`+carol+`','member'),('`+tA+`','`+dave+`','member'),
 	    ('`+tA+`','`+doc+`','provider'),('`+tB+`','`+bob+`','owner'),('`+tB+`','`+doc+`','provider');
 	  insert into providers (id, tenant_id, user_id) values ('`+pA+`','`+tA+`','`+doc+`'),('`+pB+`','`+tB+`','`+doc+`');
-	  insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at, status) values
-	    ('`+tA+`','`+pA+`','`+carol+`','2026-12-01 10:00+05:30','2026-12-01 10:30+05:30','confirmed'),
-	    ('`+tB+`','`+pB+`','`+bob+`','2026-12-01 11:00+05:30','2026-12-01 11:30+05:30','confirmed');
+	  insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at, blocked_until, status) values
+	    ('`+tA+`','`+pA+`','`+carol+`','2026-12-01 10:00+05:30','2026-12-01 10:30+05:30','2026-12-01 10:40+05:30','confirmed'),
+	    ('`+tB+`','`+pB+`','`+bob+`','2026-12-01 11:00+05:30','2026-12-01 11:30+05:30','2026-12-01 11:30+05:30','confirmed');
+	  insert into offerings (tenant_id, type, title, status) values
+	    ('`+tA+`','service','Consult','published'),('`+tA+`','service','Secret draft','draft');
+	  insert into availability_rules (tenant_id, provider_id, weekday, start_min, end_min) values ('`+tA+`','`+pA+`',1,540,1020);
 	  insert into notes (tenant_id, author_id, subject_user_id, visibility, body_enc) values
 	    ('`+tA+`','`+doc+`','`+carol+`','private','x'),('`+tA+`','`+doc+`','`+carol+`','shared','y');
 	  insert into sessions (user_id, refresh_hash, expires_at) values ('`+doc+`','h', now() + interval '1 day');`)
@@ -64,6 +67,16 @@ func TestRLS(t *testing.T) {
 		{"no scope, no rows", Scope{"", ""}, "select count(*) from tenants", 0},
 		{"user sees own sessions", Scope{"", doc}, "select count(*) from sessions", 1},
 		{"owner can't see another user's sessions", Scope{tA, alice}, "select count(*) from sessions", 0},
+		{"member sees only themself in users", Scope{tA, carol}, "select count(*) from users", 1},
+		{"staff see the space's users", Scope{tA, alice}, "select count(*) from users", 4},
+		{"provider sees self and own clients", Scope{tA, doc}, "select count(*) from users", 2},
+		{"provider's clients stay in their tenant", Scope{tB, doc}, "select count(*) from users where id = '" + carol + "'", 0},
+		{"member sees published offerings only", Scope{tA, carol}, "select count(*) from offerings", 1},
+		{"staff see drafts too", Scope{tA, alice}, "select count(*) from offerings", 2},
+		{"other tenant sees no offerings", Scope{tB, bob}, "select count(*) from offerings", 0},
+		{"member reads availability to book", Scope{tA, carol}, "select count(*) from availability_rules", 1},
+		{"busy() shows times to members", Scope{tA, dave}, "select count(*) from app.busy('" + pA + "', '2026-12-01', '2026-12-02')", 1},
+		{"busy() hides times from non-members", Scope{tA, bob}, "select count(*) from app.busy('" + pA + "', '2026-12-01', '2026-12-02')", 0},
 	}
 	for _, c := range cases {
 		if got := count(c.s, c.q); got != c.want {
@@ -73,8 +86,8 @@ func TestRLS(t *testing.T) {
 
 	// Member can't create a booking for someone else.
 	err := InTenant(ctx, pool, Scope{tA, dave}, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at)
-		  values ($1,$2,$3,'2026-12-02 10:00+05:30','2026-12-02 10:30+05:30')`, tA, pA, carol)
+		_, err := tx.Exec(ctx, `insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at, blocked_until)
+		  values ($1,$2,$3,'2026-12-02 10:00+05:30','2026-12-02 10:30+05:30','2026-12-02 10:30+05:30')`, tA, pA, carol)
 		return err
 	})
 	if !isCode(err, "42501") {
@@ -83,22 +96,50 @@ func TestRLS(t *testing.T) {
 
 	// Can't attach another tenant's provider.
 	err = InTenant(ctx, pool, Scope{tA, dave}, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at)
-		  values ($1,$2,$3,'2026-12-03 10:00+05:30','2026-12-03 10:30+05:30')`, tA, pB, dave)
+		_, err := tx.Exec(ctx, `insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at, blocked_until)
+		  values ($1,$2,$3,'2026-12-03 10:00+05:30','2026-12-03 10:30+05:30','2026-12-03 10:30+05:30')`, tA, pB, dave)
 		return err
 	})
 	if !isCode(err, "23503") {
 		t.Errorf("cross-tenant provider: want FK violation, got %v", err)
 	}
 
-	// Double booking is rejected by the exclusion constraint.
+	// Double booking is rejected by the exclusion constraint, including the 10-minute buffer after carol's 10:00-10:30.
+	for _, start := range []string{"2026-12-01 10:15+05:30", "2026-12-01 10:30+05:30"} {
+		err = InTenant(ctx, pool, Scope{tA, dave}, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at, blocked_until)
+			  values ($1,$2,$3,$4::timestamptz,$4::timestamptz + interval '30 min',$4::timestamptz + interval '30 min')`, tA, pA, dave, start)
+			return err
+		})
+		if !isCode(err, "23P01") {
+			t.Errorf("booking at %s: want exclusion violation, got %v", start, err)
+		}
+	}
+	// Right after the buffer is free.
 	err = InTenant(ctx, pool, Scope{tA, dave}, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at)
-		  values ($1,$2,$3,'2026-12-01 10:15+05:30','2026-12-01 10:45+05:30')`, tA, pA, dave)
+		_, err := tx.Exec(ctx, `insert into bookings (tenant_id, provider_id, customer_id, starts_at, ends_at, blocked_until)
+		  values ($1,$2,$3,'2026-12-01 10:40+05:30','2026-12-01 11:10+05:30','2026-12-01 11:10+05:30')`, tA, pA, dave)
 		return err
 	})
-	if !isCode(err, "23P01") {
-		t.Errorf("overlapping booking: want exclusion violation, got %v", err)
+	if err != nil {
+		t.Errorf("booking after buffer: %v", err)
+	}
+
+	// A member can't change a provider's availability or publish offerings.
+	for name, q := range map[string]string{
+		"member edits availability": "update availability_rules set end_min = 1200",
+		"member creates offering":   "insert into offerings (tenant_id, type, title) values ('" + tA + "','service','x')",
+	} {
+		err = InTenant(ctx, pool, Scope{tA, carol}, func(tx pgx.Tx) error {
+			tag, err := tx.Exec(ctx, q)
+			if err == nil && tag.RowsAffected() > 0 {
+				return errors.New("write succeeded")
+			}
+			return err
+		})
+		if err != nil && !isCode(err, "42501") {
+			t.Errorf("%s: want RLS denial, got %v", name, err)
+		}
 	}
 
 	// login_codes is reachable only through SECURITY DEFINER functions.

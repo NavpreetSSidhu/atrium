@@ -88,4 +88,31 @@ func TestTenants(t *testing.T) {
 	if len(mine) != 0 {
 		t.Fatalf("bob sees alice's spaces: %+v", mine)
 	}
+
+	// Joining from a booking page makes bob a member, once.
+	join := func(slug string) (int, Tenant) {
+		var tn Tenant
+		b, _ := json.Marshal(map[string]string{"slug": slug})
+		req, _ := http.NewRequest("POST", srv.URL+"/tenants/join", bytes.NewReader(b))
+		req.Header.Set("X-Test-User", bob)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		json.NewDecoder(res.Body).Decode(&tn)
+		return res.StatusCode, tn
+	}
+	for range 2 {
+		if st, tn := join("asha-clinic"); st != 200 || tn.Role != "member" || tn.ID != created.ID {
+			t.Fatalf("join: %d %+v", st, tn)
+		}
+	}
+	if st, _ := join("no-such-space"); st != 404 {
+		t.Fatalf("join unknown: %d", st)
+	}
+	call(bob, "GET", nil, &mine)
+	if len(mine) != 1 || mine[0].Role != "member" {
+		t.Fatalf("bob after joining: %+v", mine)
+	}
 }

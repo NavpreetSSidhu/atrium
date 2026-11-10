@@ -2,6 +2,7 @@
 package tenancy
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
@@ -34,6 +35,7 @@ type Service struct {
 var (
 	ErrBadInput  = errors.New("invalid input")
 	ErrSlugTaken = errors.New("that address is taken")
+	ErrNotFound  = errors.New("no such space")
 
 	slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$`)
 	// Subdomains we serve ourselves; a tenant on one of these could phish our users.
@@ -77,12 +79,37 @@ func (s *Service) Mine(ctx context.Context, sc db.Scope) ([]Tenant, error) {
 	return out, err
 }
 
+// Join makes the caller a member of the space with this slug (from its booking page).
+func (s *Service) Join(ctx context.Context, sc db.Scope, slug string) (Tenant, error) {
+	var t Tenant
+	err := db.InTenant(ctx, s.Pool, sc, func(tx pgx.Tx) error {
+		var id *string
+		if err := tx.QueryRow(ctx, "select app.join_tenant($1)::text", slug).Scan(&id); err != nil || id == nil {
+			return cmp.Or(err, ErrNotFound)
+		}
+		rows, _ := tx.Query(ctx, "select id::text, slug, name, role, focus from app.my_tenants() where id = $1", *id)
+		var err error
+		t, err = pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Tenant])
+		return err
+	})
+	return t, err
+}
+
 // Routes registers the tenancy endpoints behind authn (identity.Authn in production).
 func (s *Service) Routes(mux *http.ServeMux, authn func(http.Handler) http.Handler) {
 	mux.Handle("GET /tenants", authn(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sc, _ := db.ScopeFrom(r.Context())
 		list, err := s.Mine(r.Context(), sc)
 		write(w, http.StatusOK, list, err)
+	})))
+	mux.Handle("POST /tenants/join", authn(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Slug string }
+		if !httpx.ReadJSON(w, r, &in) {
+			return
+		}
+		sc, _ := db.ScopeFrom(r.Context())
+		t, err := s.Join(r.Context(), sc, in.Slug)
+		write(w, http.StatusOK, t, err)
 	})))
 	mux.Handle("POST /tenants", authn(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -104,6 +131,8 @@ func write(w http.ResponseWriter, status int, v any, err error) {
 		httpx.JSON(w, status, v)
 	case errors.Is(err, ErrBadInput):
 		httpx.Error(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrNotFound):
+		httpx.Error(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrSlugTaken):
 		httpx.Error(w, http.StatusConflict, err.Error())
 	default:
