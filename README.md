@@ -28,6 +28,8 @@ DATABASE_URL='postgres://postgres:dev@localhost:55432/atrium?sslmode=disable' \
   AUTH_JWT_SECRET=$(openssl rand -hex 32) go run ./cmd/api                                        # GET :8080/healthz
 ```
 In dev, login codes and magic links are written to the API log instead of being sent.
+
+The app: `pnpm --filter @atrium/app dev` → http://localhost:5173 (proxies `/api` to the API on :8080).
 Migrations are in `apps/api/migrations` (goose format). Run them as a role with BYPASSRLS. The app connects as a login role granted `app_user`.
 
 ## Status: Phase 0 (foundations)
@@ -39,10 +41,12 @@ Migrations are in `apps/api/migrations` (goose format). Run them as a role with 
 - [x] Double-booking exclusion constraint and tenant-composite FKs
 - [ ] Specs still to write: RLS policy catalog, API outline (OpenAPI)
 - [x] Auth: SMS OTP, email magic link, rotating refresh sessions, `Authn` → `db.Scope` middleware (ADR-6)
-- [ ] Auth follow-ups: Google OAuth, MSG91/SES senders, 2FA, per-IP rate limit, httpOnly refresh cookie
+- [x] Refresh token in httpOnly cookie, immediate revocation, cross-tab refresh lock
+- [x] Onboarding walkthrough: sign-in UI, name → offer → space → getting-started dashboard (`apps/app`)
+- [ ] Third-party (later): Google OAuth, MSG91 SMS, SES email; then 2FA, per-IP rate limit
 - [ ] River worker, OTel, sqlc, goose runner (`cmd/migrate`)
 - [x] Scaffold `apps/web` (Next.js 16) and `apps/app` (Vite 8 + Tailwind)
-- [ ] Scaffold `packages/*`; generated API client; TanStack, shadcn/ui, PWA in `apps/app`
+- [ ] Scaffold `packages/*`; generated API client; shadcn/ui, PWA in `apps/app` (TanStack Router/Query done)
 - [ ] Terraform/EKS, LiveKit cluster and `lk load-test`
 
 ## License

@@ -14,6 +14,8 @@ apps/api/            Go modular monolith (one module, binaries under cmd/)
   cmd/<binary>/      main packages only: wiring, no logic (api now; worker, realtime, migrate later)
   internal/db/       InTenant + Scope: the only way to run tenant-scoped SQL
   internal/identity/ login, sessions, access tokens, Authn middleware
+  internal/tenancy/  spaces (tenants) and memberships
+  internal/httpx/    shared JSON request/response helpers
   internal/<module>/ identity, tenancy, catalog, scheduling, rtc, commerce, ... (PRD §3)
   migrations/        goose SQL, numbered, append-only
 apps/web/            Next.js: tenant sites, marketing, marketplace
@@ -29,7 +31,7 @@ Rule of thumb: `apps/*` are deployables, `packages/*` are shared TS code. Shared
 ```sh
 docker compose up -d                       # postgres :55432, redis :56379
 cd apps/api && go vet ./... && go test ./... # needs TEST_DATABASE_URL for the RLS suite (see README)
-pnpm install && pnpm lint && pnpm build    # JS workspaces via Turborepo
+pnpm install && pnpm lint && pnpm test && pnpm build   # JS workspaces via Turborepo (tests: node --test, no runner dep)
 pnpm --filter @atrium/web dev              # Next.js :3000
 pnpm --filter @atrium/app dev              # Vite :5173
 ```

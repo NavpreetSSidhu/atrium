@@ -36,12 +36,14 @@ One global user account works across many tenants, as on Lockers. Roles are stor
 - 2FA is required for owners and providers who handle health data.
 - **Auth flow (API):**
   - `POST /auth/start {channel: sms|email, dest}` sends a 6-digit SMS code or an email magic link (`APP_URL/auth/verify?email=&code=`). Both expire in 10 minutes. 5 per destination per hour, 5 wrong guesses kill a code. The response never reveals whether the account exists.
-  - `POST /auth/verify {channel, dest, code}` creates the user on first login and returns `{access_token, refresh_token, expires_in}`. Access JWT lives 15 minutes, the refresh token 30 days.
-  - `POST /auth/refresh {refresh_token}` rotates the refresh token. Reusing a rotated-out token revokes the whole session (theft detection).
-  - `POST /auth/logout`, `GET /auth/sessions`, `DELETE /auth/sessions/{id}`, `GET /me` need `Authorization: Bearer <access>`.
+  - `POST /auth/verify {channel, dest, code}` creates the user on first login and returns `{access_token, expires_in}`. The refresh token is set as an httpOnly, SameSite=Strict cookie and never reaches page scripts. Access JWT lives 15 minutes, the refresh token 30 days.
+  - `POST /auth/refresh` (cookie) rotates the refresh token. Reusing a rotated-out token revokes the whole session (theft detection).
+  - `POST /auth/logout`, `GET /auth/sessions`, `DELETE /auth/sessions/{id}`, `GET/PATCH /me` need `Authorization: Bearer <access>`. Revoking a session (logout, theft detection) blocks its access tokens immediately.
   - Tenant context: an optional `X-Tenant-ID` header. RLS checks membership, so a forged header sees nothing.
   - Phone numbers must be E.164. Emails are lowercased.
-  - Not yet: Google OAuth (needs a Google client), 2FA, per-IP rate limiting (Redis), refresh token in an httpOnly cookie for the web apps.
+  - Not yet: Google OAuth (needs a Google client), 2FA, per-IP rate limiting (Redis).
+- **Onboarding walkthrough (apps/app):** sign in → your name → what you'll offer (courses, appointments, or both) → name your space and its `{slug}.atrium.in` address → dashboard with a getting-started checklist tailored to that choice. Checklist steps link up as their modules ship.
+  - `POST /tenants {name, slug, focus}` creates a space owned by the caller. `GET /tenants` lists the caller's spaces. Slugs are 3–40 chars; platform subdomains (`app`, `api`, `www`, …) are reserved.
 
 **M2 Site builder / CMS (Next.js)**
 - Block-based page editor using **Puck**, an open-source React visual editor, so we don't build our own.

@@ -1,8 +1,8 @@
 package identity
 
 import (
+	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/NavpreetSSidhu/atrium/apps/api/internal/db"
+	"github.com/NavpreetSSidhu/atrium/apps/api/internal/httpx"
 )
 
 // Routes registers the auth endpoints (see PRD M1).
@@ -23,6 +24,15 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /auth/sessions", s.Authn(http.HandlerFunc(s.handleSessions)))
 	mux.Handle("DELETE /auth/sessions/{id}", s.Authn(http.HandlerFunc(s.handleRevoke)))
 	mux.Handle("GET /me", s.Authn(http.HandlerFunc(s.handleMe)))
+	mux.Handle("PATCH /me", s.Authn(http.HandlerFunc(s.handleSetName)))
+}
+
+const refreshCookie = "atrium_refresh"
+
+// setRefresh sets (maxAge > 0) or clears (maxAge < 0) the refresh cookie.
+func (s *Service) setRefresh(w http.ResponseWriter, value string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{Name: refreshCookie, Value: value, Path: "/", MaxAge: maxAge,
+		HttpOnly: true, Secure: s.SecureCookie, SameSite: http.SameSiteStrictMode})
 }
 
 type sidKey struct{}
@@ -37,6 +47,10 @@ func (s *Service) Authn(next http.Handler) http.Handler {
 			writeErr(w, ErrInvalidAuth)
 			return
 		}
+		if live, err := s.live(r.Context(), c.Subject, c.SID); err != nil || !live {
+			writeErr(w, cmp.Or(err, ErrInvalidAuth))
+			return
+		}
 		sc := db.Scope{UserID: c.Subject, TenantID: r.Header.Get("X-Tenant-ID")}
 		if sc.TenantID != "" && !isUUID(sc.TenantID) {
 			writeErr(w, ErrBadInput)
@@ -49,7 +63,7 @@ func (s *Service) Authn(next http.Handler) http.Handler {
 
 func (s *Service) handleStart(w http.ResponseWriter, r *http.Request) {
 	var in struct{ Channel, Dest string }
-	if !readJSON(w, r, &in) {
+	if !httpx.ReadJSON(w, r, &in) {
 		return
 	}
 	if err := s.StartLogin(r.Context(), in.Channel, in.Dest); err != nil {
@@ -61,21 +75,29 @@ func (s *Service) handleStart(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleVerify(w http.ResponseWriter, r *http.Request) {
 	var in struct{ Channel, Dest, Code string }
-	if !readJSON(w, r, &in) {
+	if !httpx.ReadJSON(w, r, &in) {
 		return
 	}
 	t, err := s.FinishLogin(r.Context(), in.Channel, in.Dest, in.Code, r.UserAgent())
+	if err == nil {
+		s.setRefresh(w, t.refresh, int(refreshTTL.Seconds()))
+	}
 	writeResult(w, t, err)
 }
 
 func (s *Service) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		RefreshToken string `json:"refresh_token"`
-	}
-	if !readJSON(w, r, &in) {
+	c, err := r.Cookie(refreshCookie)
+	if err != nil {
+		writeErr(w, ErrInvalidAuth)
 		return
 	}
-	t, err := s.Refresh(r.Context(), in.RefreshToken)
+	t, err := s.Refresh(r.Context(), c.Value)
+	switch {
+	case err == nil:
+		s.setRefresh(w, t.refresh, int(refreshTTL.Seconds()))
+	case errors.Is(err, ErrInvalidAuth):
+		s.setRefresh(w, "", -1)
+	}
 	writeResult(w, t, err)
 }
 
@@ -85,6 +107,7 @@ func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	s.setRefresh(w, "", -1)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -123,12 +146,17 @@ func (s *Service) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, me, err)
 }
 
-func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(v); err != nil {
-		http.Error(w, `{"error":"invalid JSON body"}`, http.StatusBadRequest)
-		return false
+func (s *Service) handleSetName(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Name string }
+	if !httpx.ReadJSON(w, r, &in) {
+		return
 	}
-	return true
+	sc, _ := db.ScopeFrom(r.Context())
+	if err := s.SetName(r.Context(), sc, in.Name); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.handleMe(w, r)
 }
 
 func writeResult(w http.ResponseWriter, v any, err error) {
@@ -136,8 +164,7 @@ func writeResult(w http.ResponseWriter, v any, err error) {
 		writeErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	httpx.JSON(w, http.StatusOK, v)
 }
 
 func writeErr(w http.ResponseWriter, err error) {
@@ -155,9 +182,7 @@ func writeErr(w http.ResponseWriter, err error) {
 		slog.Error("identity", "err", err)
 		err = errors.New("internal error")
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	httpx.Error(w, status, err.Error())
 }
 
 func isUUID(s string) bool {

@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NavpreetSSidhu/atrium/apps/api/internal/identity"
+	"github.com/NavpreetSSidhu/atrium/apps/api/internal/tenancy"
 )
 
 func main() {
@@ -40,10 +42,13 @@ func main() {
 	if appURL == "" {
 		appURL = "http://localhost:5173"
 	}
-	auth := &identity.Service{Pool: pool, Sender: identity.LogSender{}, Secret: secret, AppURL: appURL}
+	auth := &identity.Service{Pool: pool, Sender: identity.LogSender{}, Secret: secret, AppURL: appURL,
+		SecureCookie: !strings.HasPrefix(appURL, "http://")}
+	tenants := &tenancy.Service{Pool: pool}
 
 	mux := http.NewServeMux()
 	auth.Routes(mux)
+	tenants.Routes(mux, auth.Authn)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := pool.Ping(r.Context()); err != nil {
 			http.Error(w, "db down", http.StatusServiceUnavailable)
