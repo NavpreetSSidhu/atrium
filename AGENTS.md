@@ -28,8 +28,11 @@ Rule of thumb: `apps/*` are deployables, `packages/*` are shared TS code. Shared
 ```sh
 docker compose up -d                       # postgres :55432, redis :56379
 cd apps/api && go vet ./... && go test ./... # needs TEST_DATABASE_URL for the RLS suite (see README)
-pnpm install && pnpm build                 # JS workspaces via Turborepo
+pnpm install && pnpm lint && pnpm build    # JS workspaces via Turborepo
+pnpm --filter @atrium/web dev              # Next.js :3000
+pnpm --filter @atrium/app dev              # Vite :5173
 ```
+`apps/web/AGENTS.md` is maintained by Next.js (`next dev` re-adds it): read it before touching `apps/web`, since Next 16 APIs differ from older training data.
 Before you say "done": `go vet` and `go test` pass with `TEST_DATABASE_URL` set. A skipped RLS test is not a pass.
 
 ## Non-negotiable invariants

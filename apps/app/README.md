@@ -1,3 +1,5 @@
-# app
+# @atrium/app
 
-Vite + React SPA shipped as a PWA: dashboards, rooms, learner/patient portals. TanStack Router/Query, Tailwind + shadcn/ui, LiveKit React. See ADR-5. Not scaffolded yet.
+Vite + React SPA (PWA): dashboards, rooms, learner/patient portals. Tailwind now; TanStack Router/Query, shadcn/ui, LiveKit and PWA plugin added with the first feature that needs them. See ADR-5.
+
+`pnpm --filter @atrium/app dev` → http://localhost:5173

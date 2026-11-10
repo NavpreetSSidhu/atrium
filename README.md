@@ -38,7 +38,8 @@ Migrations are in `apps/api/migrations` (goose format). Run them as a role with 
 - [ ] Specs still to write: RLS policy catalog, API outline (OpenAPI)
 - [ ] Auth (OTP, Google, magic link) and session to `db.Scope` middleware
 - [ ] River worker, OTel, sqlc, goose runner (`cmd/migrate`)
-- [ ] Scaffold `apps/web`, `apps/app`, `packages/*`; generated API client
+- [x] Scaffold `apps/web` (Next.js 16) and `apps/app` (Vite 8 + Tailwind)
+- [ ] Scaffold `packages/*`; generated API client; TanStack, shadcn/ui, PWA in `apps/app`
 - [ ] Terraform/EKS, LiveKit cluster and `lk load-test`
 
 ## License
